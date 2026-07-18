@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fake Job Form</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    .card { max-width: 720px; border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
+    .row { margin-bottom: 0.8rem; }
+    .hidden { display: none; }
+    label { display: block; margin-bottom: 0.25rem; }
+    input, select, textarea { width: 100%; padding: 0.5rem; }
+    button { padding: 0.6rem 1rem; margin-right: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Software Engineer - Test Application</h1>
+    <p>This is a local test fixture for dry-run agent integration.</p>
+
+    <form id="job-form">
+      <section id="step-1">
+        <h2>Step 1</h2>
+        <div class="row">
+          <label for="full_name">Full Name</label>
+          <input id="full_name" name="full_name" type="text" required>
+        </div>
+        <div class="row">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" required>
+        </div>
+        <div class="row">
+          <label for="phone">Phone</label>
+          <input id="phone" name="phone" type="tel">
+        </div>
+        <button id="next-btn" type="button">Next</button>
+      </section>
+
+      <section id="step-2" class="hidden">
+        <h2>Step 2</h2>
+        <div class="row">
+          <label for="resume">Resume</label>
+          <input id="resume" name="resume" type="file" accept=".pdf,.doc,.docx">
+        </div>
+        <div class="row">
+          <label for="cover_letter">Cover Letter</label>
+          <textarea id="cover_letter" name="cover_letter" rows="4"></textarea>
+        </div>
+        <div class="row">
+          <label for="work_auth">Work Authorization</label>
+          <select id="work_auth" name="work_auth">
+            <option value="yes">Authorized to work</option>
+            <option value="no">Not authorized</option>
+          </select>
+        </div>
+        <button id="back-btn" type="button">Back</button>
+        <button id="submit-btn" type="submit">Submit Application</button>
+      </section>
+    </form>
+
+    <p id="done" class="hidden">Thank you. Your application was submitted.</p>
+  </div>
+
+  <script>
+    const step1 = document.getElementById("step-1");
+    const step2 = document.getElementById("step-2");
+    const done = document.getElementById("done");
+    const form = document.getElementById("job-form");
+
+    document.getElementById("next-btn").addEventListener("click", () => {
+      step1.classList.add("hidden");
+      step2.classList.remove("hidden");
+    });
+
+    document.getElementById("back-btn").addEventListener("click", () => {
+      step2.classList.add("hidden");
+      step1.classList.remove("hidden");
+    });
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      form.classList.add("hidden");
+      done.classList.remove("hidden");
+    });
+  </script>
+</body>
+</html>
