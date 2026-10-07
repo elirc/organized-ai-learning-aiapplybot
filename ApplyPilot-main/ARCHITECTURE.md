@@ -408,3 +408,104 @@ Think of Stage 6 as three layers:
    - translates backend-specific text into stable statuses
 
 That separation is what makes Claude/Codex coexist cleanly while keeping existing pipeline behavior predictable.
+
+---
+
+## 16) Hands-On Exercises
+
+> Snapshot note: sections 16–17 come from the refined `ARCHITECTURE.md` in `elirc/applybot`. This snapshot's code is newer: it has five more test files and changes in `launcher.py`, `database.py` and other modules. So the line numbers, E4 and review point 4 were re-checked against the code here and adjusted.
+
+Ordered easy → hard. Each has a check you can run.
+
+### E1 — Drive the parser by hand (15 min)
+
+The normalization layer is pure. Its only project import is the
+`ParsedOutcome` dataclass from the sibling `base.py`, so you can poke it
+directly:
+
+```bash
+python -c "import sys; sys.path.insert(0, 'src'); from applypilot.apply.agents.parsing import parse_agent_result; print(parse_agent_result('RESULT: APPLIED - submitted ok')); print(parse_agent_result('')); print(parse_agent_result('blah'))"
+```
+
+**Check**: you get `APPLIED/submitted ok/True`, then
+`NEEDS_REVIEW/empty_output/False`, then `NEEDS_REVIEW/no_result_marker/False`.
+Now explain why `NEEDS_REVIEW` (not `FAILED`) is the right default for
+unparseable output from an agent that may or may not have submitted a form.
+
+### E2 — Pin the precedence rule with a test (30 min)
+
+Read `parse_agent_result()` in `src/applypilot/apply/agents/parsing.py`:
+JSON lines are tried **before** `RESULT:` lines, and that priority is
+position-independent — output containing `RESULT: APPLIED` followed later
+by `{"status": "FAILED"}` parses as `FAILED`. That is a real behavioural
+contract and nothing currently documents it except the code.
+
+Add a test to `tests/test_agent_parsing.py` that fixes this precedence
+(both orders: JSON-then-RESULT and RESULT-then-JSON).
+**Check**: `python -m pytest tests/test_agent_parsing.py -q` passes, and
+deliberately swapping the two `_try_parse_*` calls makes your test fail.
+
+### E3 — Trace auto-fallback and name its gaps (45 min)
+
+Read the `auto` branch in `src/applypilot/apply/launcher.py` (the
+`for engine in ("claude", "codex")` loop, ~L548–568). Write down, from the
+code alone: which outcomes cause the loop to try Codex after Claude, and
+what the final status string is when both fail.
+**Check**: your answer ends with `auto_fallback_exhausted`, and you can say
+what a `CAPTCHA` outcome from Claude does (does Codex get a turn? should
+it?).
+
+### E4 — First direct test for the database layer (1–2 h)
+
+`database.py` has no test file of its own. It is only exercised indirectly:
+the `_setup_db` fixture in `tests/test_apply_launcher.py` calls `init_db`
+once on a `tmp_path` DB so the launcher tests have a `jobs` table. It was
+built for direct tests: `get_connection(db_path=...)` and
+`init_db(db_path=...)` accept an override path ("Useful for testing" is in
+the docstring), and `init_db` claims to be idempotent. Nothing checks that
+claim. Write a test (a new `tests/test_database.py`) that creates a DB in
+`tmp_path`, inserts a job, and asserts `init_db` is idempotent (call it
+twice, data survives). Copy the `close_connection` setup and teardown from
+`_setup_db`.
+**Check**: `python -m pytest -q` stays green; deleting the
+`CREATE TABLE IF NOT EXISTS` guard's `IF NOT EXISTS` makes your idempotence
+test fail (undo that!).
+
+---
+
+## 17) What a Senior Reviewer Would Push Back On
+
+All four are real properties of today's code — verify each before taking
+the review position.
+
+1. **The job's identity is its URL** (`url TEXT PRIMARY KEY` in
+   `database.py`). Natural keys are tidy until the same posting appears
+   with `?utm_source=...` appended (two rows, two applications to one job)
+   or a board reposts the same role at a new URL (history lost). A
+   reviewer would ask for URL canonicalization at insert time, and
+   eventually a surrogate id + unique index. Where would you normalize —
+   discovery, or the DB layer?
+2. **One wide table for all six stages.** Deliberate, and the docstring
+   says why (any stage can run independently, no migration ordering). The
+   cost: every stage's writer can clobber any column, and NULL means both
+   "not yet" and "not applicable". Fine for a single-user CLI; the moment
+   two processes share the DB you want per-stage tables or at least
+   `CHECK` constraints on `apply_status`.
+3. **Status vocabulary is stringly-typed at the edges.** `EXPIRED` and
+   `LOGIN_ISSUE` from an agent collapse into `FAILED` with a
+   `expired:`/`login_issue:` reason prefix (`parsing.py`,
+   `_normalize_status`). Downstream code that wants to treat login issues
+   as retryable has to parse strings. The `Literal[...]` on
+   `ParsedOutcome.status` is the right instinct — a reviewer would push to
+   either widen it or document the reason-prefix contract where it's
+   consumed.
+4. **Seven test files for 32 source files.** What exists is well-aimed:
+   the parser (pure, highest churn), an integration harness that skips
+   cleanly when CLIs are missing, and `test_apply_launcher.py` (job
+   claiming, retry/permanent-failure bookkeeping, lock release, the domain
+   allowlist), plus config normalization, JobSpy discovery, the LLM client
+   and PDF generation. The gaps are the persistence layer's own contract
+   (it is only touched through the launcher fixture) and
+   `_normalize_status`'s mapping table: no test feeds it `EXPIRED` or
+   `LOGIN_ISSUE`. E2/E4 above are the first two PRs a reviewer would
+   actually ask for. Both are small, high-value and need no mocking.
